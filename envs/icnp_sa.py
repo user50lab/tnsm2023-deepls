@@ -10,6 +10,7 @@ from networkx.algorithms.shortest_paths.generic import _build_paths_from_predece
 
 from envs.utils import johnson_all_sp
 
+# 定义python字典，用于初始化图的边的默认属性集合。
 DEFAULT_EDGE_ATTRIBUTES = {
     "increments": 1,
     "reductions": 1,
@@ -19,6 +20,7 @@ DEFAULT_EDGE_ATTRIBUTES = {
 
 
 class ICNP2021Env(gym.Env):
+    ### __init__: 构造函数，用于初始化环境。
     def __init__(
         self,
         env_type: str = "NSFNet",
@@ -47,30 +49,49 @@ class ICNP2021Env(gym.Env):
 
         self.test_index = 99
 
+        # gym.spaces.Discrete(n)创建了一个离散的动作空间，这里的n表示可能的动作的数量。在离散动作空间中，每个动作都被分配一个唯一的整数编号，从0到n-1。
+        # self.G.number_of_edges()是图G中边的数量。所以，动作空间的大小被设定为图中边的数量。
+        # 这意味着在这个环境中，每个动作对应于图中的一条边。智能体选择的动作将影响到对应边的权重或其他属性。
         self.action_space = gym.spaces.Discrete(self.G.number_of_edges())
+        # gym.spaces.Box创建了一个连续的多维空间，其中每个观测都是一个在指定范围内的实数向量。
+        # low和high参数定义了这个空间的上下限。在这里，它们被设置为0和1，表示观测空间中每个元素的最小和最大值。因为后面使用了归一化，所以这个范围是合适的。
+        # shape=(self.G.number_of_edges(), 2)定义了观测空间的形状，这里是一个二维数组。第一个维度的大小是图中边的数量，第二个维度的大小是2，这表示每条边有两种观测数据。
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.G.number_of_edges(), 2), dtype=np.float32)
 
         self.seed(seed)
 
         self.reset()
 
+    ### step: 执行一个行动(action)，返回新的状态观测(observation)，奖励(reward)，布尔值表示是否终止(done)，以及调试信息(info)。
+    # 实现环境中的一次动作和状态转换的核心。
+    # 定义函数step的行，它接受一次动作action作为输入，并返回一个包含四个元素的元组(Tuple)：一个NumPy数组(npt.NDArray)表示新的观测值，一个浮点数(float)表示奖励，一个布尔值(bool)表示是否结束这一回合（或称为episode），以及一个字典(dict)包含额外的调试信息。
     def step(self, action) -> Tuple[npt.NDArray, float, bool, dict]:
         # for idl, value in enumerate(action):
+        # 将传入的action转换为整数，并使用这个整数作为self.link_id_dict字典的键来得到对应的链接。此处假定动作(action)代表着一个序号或ID，该序号或ID将被映射到一个特定的网络链接上。
         link = self.link_id_dict[int(action)]
+        # 根据所选的动作(即特定的链路)更新环境中的权重。
         self._update_weights(link)
+        # 获取更新后的权重信息。
         self._get_weights()
+        # 可能用于收集每个链接的流量信息。
         self._get_link_traffic()
+        # 计算并获取当前动作后的即时奖励。
         reward = self.reward()
+        # 获取当前环境状态的观测值，它的具体实现会提供智能体需要的状态信息。
         observation = self.observation()
         self.iter_count += 1
+        # 对self.temperature变量进行更新，这里用的是模拟退火算法的通用更新公式。这一行减少了self.temperature的值，模拟退火过程中的温度下降。退火系数是基于end_temperature, starting_temperature, 和episode_length计算得来。
         self.temperature -= self.temperature * np.power(self.end_temperature / self.starting_temperature, self.episode_length)
+        # 创建一个字典info，包含了一些可能用于调试和分析的额外信息，如starting_max_load, max_load和n_accepted等。这些都是与环境的性能指标相关的值。
         info = {
             "starting_max_load": self.start_reward_measure,
             "max_load": self.best_reward_measure,
             "n_accepted": self.n_accepted,
         }
+        # 返回一个元组，包括新的观测值(observation)、计算得到的奖励(reward)、一个布尔值表示当前回合是否应该结束（当iter_count大于等于episode_length时表明结束）、以及包含额外调试信息的字典(info)。
         return observation, reward, self.iter_count >= self.episode_length, info
 
+    ### reset: 重置环境的状态到初始状态，并返回初始观测。
     def reset(self) -> npt.NDArray:
         if self.eval:
             self.num_sample = self.test_index
