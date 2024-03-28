@@ -8,6 +8,7 @@ from algos.equivariant_policy import EquivariantActorCriticPolicy, IdentityFeatu
 from envs.icnp_sa import ICNP2021Env
 
 if __name__ == "__main__":
+    # 创建一个ArgumentParser对象，用于解析命令行参数。
     parser = argparse.ArgumentParser(description="Process PPO training arguments.")
     parser.add_argument("--env_type", type=str, default="nsfnet")
     parser.add_argument("--episode_length", type=int, default=10)
