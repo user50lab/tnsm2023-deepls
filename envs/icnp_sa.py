@@ -144,25 +144,45 @@ class ICNP2021Env(gym.Env):
         self.observation_space.seed(seed)
         self.rng = np.random.default_rng(seed)
 
+    ### 负责加载网络拓扑的数据结构和识别每条边的唯一标识。
+    # 这个函数的声明指明了它返回一个元组，包含一个networkx的有向图(DiGraph)和一个字典(dict)。
     def _load_topology(self) -> Tuple[nx.DiGraph, dict]:
         try:
+            # 使用os.path.join方法构建拓扑图文件的路径。
             nx_file = os.path.join(self.base_dir, self.env_type, "graph_attr.txt")
+            # 尝试通过读取GML文件（图建模语言文件）来构建一个networkx的有向图对象。nx.read_gml函数用于读取GML文件，并且destringizer=int参数指示将所有的属性值转换为整数类型。
             topology = nx.DiGraph(nx.read_gml(nx_file, destringizer=int))
+        # 如果在试图加载GML文件时发生错误（比如文件不存在），则执行except子句。
         except:
+            # 如果加载GML文件失败，则创建一个空的DiGraph对象。
             topology = nx.DiGraph()
+            # 构建graph.txt文件的路径，这个文件包含边缘容量信息。
             capacity_file = os.path.join(self.dataset_dir, "capacities", "graph.txt")
+            # 打开容量文件，并将其内容赋值给fd变量。
             with open(capacity_file) as fd:
+                # 遍历文件中的每一行。
                 for line in fd:
+                    # 检查这一行是否包含"Link_"字符串，这可能是文件中标识链路数据的方式。
                     if "Link_" in line:
+                        # 将行按空格分割成多个部分，并将这些部分存储在列表camps中。
                         camps = line.split(" ")
+                        # 在图topology中添加一条边，从camps[1]到camps[2]，这两个值在列表中位置分别是第二和第三，通过int函数转化为整数。
                         topology.add_edge(int(camps[1]), int(camps[2]))
+                        # 为刚刚添加的边设置一个属性“bandwidth”，它是camps列表中第五个元素的值，转换为整数。
                         topology[int(camps[1])][int(camps[2])]["bandwidth"] = int(camps[4])
+        # 初始化一个空字典，用于存储链接ID与它们的节点对应关系。
         link_id_dict = {}
+        # 初始化索引变量idx为0，用于给边分配唯一的标识符。
         idx = 0
+        # 遍历图topology中所有的边。
         for i, j in topology.edges():
+            # 给每条边分配一个唯一的ID。
             topology[i][j]["id"] = idx
+            # 在link_id_dict中记录边的ID与其起点和终点的映射。
             link_id_dict[idx] = (i, j)
+            # 将索引递增，为下一条边准备新的ID。
             idx += 1
+        # 返回拓扑图(topology)和链接ID字典(link_id_dict)的元组。
         return topology, link_id_dict
 
     def _load_capacities(self) -> None:
