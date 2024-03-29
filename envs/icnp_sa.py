@@ -92,11 +92,15 @@ class ICNP2021Env(gym.Env):
         return observation, reward, self.iter_count >= self.episode_length, info
 
     ### reset: 重置环境的状态到初始状态，并返回初始观测。
+    # 返回一个NumPy数组（npt.NDArray）类型的对象，这个数组代表环境的初始状态的观测。
     def reset(self) -> npt.NDArray:
         if self.eval:
+            # 如果处于评估模式，设置测试样本的编号为当前的test_index值。
             self.num_sample = self.test_index
         else:
+            # 使用环境独有的随机数生成器对象self.rng来选择一个整数作为样本编号，范围从0 (包括) 到99 (不包括)。
             self.num_sample = self.rng.integers(low=0, high=99)
+        # test_index值递增1，用于追踪评估过程中的当前样本编号。
         self.test_index += 1
         if self.test_index >= 200:
             self.test_index = 100
@@ -114,17 +118,19 @@ class ICNP2021Env(gym.Env):
         self.n_accepted = 0
         return self.observation()
 
+    # 返回网络的当前状态的观察值，观察值通常用于提供环境的当前信息
     def observation(self) -> npt.NDArray:
         # best_reward_measure = np.full(shape=(self.G.number_of_edges(), 1), fill_value=self.best_reward_measure)
-        return np.concatenate([self.link_traffic.reshape(-1, 1), self.weights.reshape(-1, 1)], axis=-1, dtype=np.float32)
+        return np.concatenate([self.link_traffic.reshape(-1, 1), self.weights.reshape(-1, 1)], axis=-1, dtype=np.float32)   # 首先将类变量 self.link_traffic 和 self.weights 转换为列向量；然后，它使用 np.concatenate 函数按照最后一个轴（axis=-1），也就是列，将这两个列向量拼接起来形成一个新的二维数组。
 
+    ### 用于计算和更新当前的奖励值。
     def reward(self) -> float:
-        current_reward_measure = np.max(self.link_traffic)
-        reward = self.reward_measure - current_reward_measure
+        current_reward_measure = np.max(self.link_traffic)   # 计算当前网络中所有链路流量的最大值，并将其存储在变量 current_reward_measure 中。
+        reward = self.reward_measure - current_reward_measure   # 计算当前奖励值，方法是从某个存储在实例中的基线奖励测量 self.reward_measure 中减去 current_reward_measure。
         # reward = max(0, (self.best_reward_measure - current_reward_measure))
         if self.best_reward_measure > current_reward_measure:
-            self.best_reward_measure = current_reward_measure
-            self.best_weights = np.copy(self.weights)
+            self.best_reward_measure = current_reward_measure   # 更新 self.best_reward_measure 为新的 current_reward_measure
+            self.best_weights = np.copy(self.weights)   # 用当前链路的权重 self.weights 更新 self.best_weights
             self.n_accepted += 1
         elif current_reward_measure > self.reward_measure:
             if self.rng.random() > self._metropolis_acceptance(current_reward_measure):
@@ -140,7 +146,9 @@ class ICNP2021Env(gym.Env):
         return reward
 
     def seed(self, seed: int) -> None:
+        # 调用了环境的动作空间对象self.action_space的seed方法，并将传入的种子seed值传递给它。这是为了确保后续基于动作空间的随机选择是可重现的，因为相同的种子值会产生相同的随机序列。
         self.action_space.seed(seed)
+        # 设置观测空间对象self.observation_space的随机数生成器的种子。这样做可以确保任何依赖于观测空间的随机性都是可重现的。
         self.observation_space.seed(seed)
         self.rng = np.random.default_rng(seed)
 
@@ -185,6 +193,7 @@ class ICNP2021Env(gym.Env):
         # 返回拓扑图(topology)和链接ID字典(link_id_dict)的元组。
         return topology, link_id_dict
 
+    ### 用于从文件加载网络链路的容量信息。
     def _load_capacities(self) -> None:
         if self.traffic_profile == "gravity_full":
             capacity_file = os.path.join(self.dataset_dir, "capacities", "graph-TM-" + str(self.num_sample) + ".txt")
@@ -200,6 +209,7 @@ class ICNP2021Env(gym.Env):
         tm_file = os.path.join(self.dataset_dir, "TM", "TM-" + str(self.num_sample))
         self.traffic_demand = np.zeros((self.G.number_of_nodes(), self.G.number_of_nodes()))
         with open(tm_file) as fd:
+            # 这里连续调用两次fd.readline()来跳过文件的前两行。这通常用于跳过文件头部的信息，例如列标题或者注释。
             fd.readline()
             fd.readline()
             for line in fd:
@@ -207,9 +217,12 @@ class ICNP2021Env(gym.Env):
                 self.traffic_demand[int(camps[1]), int(camps[2])] = float(camps[3])
 
     def _get_weights(self) -> None:
+        # 这个数组用于存储图中每条边的权重。
         weights = np.zeros(shape=(self.G.number_of_edges()), dtype=np.float32)
         for i, j in self.G.edges():
+            # 该行将边 (i, j) 的权重 weight 赋值给之前创建的 weights 数组。权重是从图的边属性 ["weight"] 中获取的，而数组中对应的索引位置由边的另一个属性 ["id"] 确定。
             weights[self.G[i][j]["id"]] = self.G[i][j]["weight"]
+        # 这一行把 weights 数组中的所有权重值除以数组中的最大权重值，实现了权值的归一化处理。
         self.weights = np.divide(weights, np.max(weights))  # otherwise does not give type hints
 
     def _update_weights(self, link) -> None:
@@ -220,26 +233,29 @@ class ICNP2021Env(gym.Env):
         for i, j in self.G.edges():
             self.G[i][j]["weight"] = self.weights[self.G[i][j]["id"]]
 
+    # 用于重置网络图中所有边的属性到默认值。
     def _reset_edge_attributes(self, attributes=None) -> None:
         if attributes is None:
             attributes = list(DEFAULT_EDGE_ATTRIBUTES.keys())
         if type(attributes) != list:
+            # 如果attributes不是列表，这行代码会创建一个包含attributes的新列表。这是为了确保attributes是可迭代的，下面的循环不会因类型不符而出错。
             attributes = [attributes]
         for i, j in self.G.edges():
             for attribute in attributes:
+                # 将所有选定的边属性重置为其默认值。
                 self.G[i][j][attribute] = DEFAULT_EDGE_ATTRIBUTES[attribute]
 
     def _normalize_traffic(self) -> None:
         for i, j in self.G.edges():
-            self.G[i][j]["traffic"] /= self.G[i][j]["capacity"]
+            self.G[i][j]["traffic"] /= self.G[i][j]["capacity"]   # 在循环内部，边上的流量 (traffic) 被除以相应边的容量 (capacity)。这是流量归一化的过程，它确保了每条边上的流量不会超过其容量。这步处理对于保持网络的稳定性至关重要。
 
     def _successive_equal_cost_multipaths(self, src, dst, traffic) -> None:
-        new_srcs = self.next_hop_dict[src][dst]
-        traffic /= len(new_srcs)
-        for new_src in new_srcs:
-            self.G[src][new_src]["traffic"] += traffic
-            if new_src != dst:
-                self._successive_equal_cost_multipaths(new_src, dst, traffic)
+        new_srcs = self.next_hop_dict[src][dst]   # 从之前创建的字典 self.next_hop_dict 中，获取从 src 到 dst 的所有下一跳节点，并将它们存储在 new_srcs 中。
+        traffic /= len(new_srcs)   # 将流量 traffic 均等分配给所有的下一跳节点，即通过将总流量除以下一跳节点的数量 len(new_srcs)。
+        for new_src in new_srcs:   # 遍历路由下一跳节点集 new_srcs。
+            self.G[src][new_src]["traffic"] += traffic   # 对每个下一跳节点 new_src，在边 (src, new_src) 上增加它的流量份额。
+            if new_src != dst:   # 如果下一跳节点不是目的节点 dst，
+                self._successive_equal_cost_multipaths(new_src, dst, traffic)   # 递归调用 _successive_equal_cost_multipaths 方法处理从下一跳节点 new_src 到目的节点 dst 的流量。这种递归确保了流量能够沿着多条路径向下传播。
 
     # def _distribute_link_traffic(self):
     #     self._reset_edge_attributes('traffic')
@@ -257,21 +273,28 @@ class ICNP2021Env(gym.Env):
     #             self._successive_equal_cost_multipaths(src, dst, traffic)
     #     self._normalize_traffic()
 
+    ### 用于在网络图中分配流量，依照源节点和目的节点对间的所有最短路径。
     def _distribute_link_traffic(self):
+        # 为每条边的 "traffic" 属性设置到默认值。
         self._reset_edge_attributes("traffic")
+        # 初始化一个叫做 next_hop_dict 的字典，其中包含所有节点对，排除同一个节点作为源节点和目的节点的情况。字典用于存储可能的下一跳节点。
         self.next_hop_dict = {
             i: {j: set() for j in range(self.G.number_of_nodes()) if j != i} for i in range(self.G.number_of_nodes())
         }
+        # 调用 johnson_all_sp 函数，计算图 self.G 中所有对节点间的所有最短路径的前驱节点。这个函数的返回值可能是一个字典，其键是图中的每个节点，值是另一个字典，映射到达其他所有节点的前驱节点。
         pred = johnson_all_sp(self.G)
+        # 初始化一个集合 visited_pairs 来跟踪已经访问过的节点对，以避免重复处理。
         visited_pairs = set()
+        # 再次初始化 next_hop_dict 字典。这可能是重复的操作，如果是，那它只是确保 next_hop_dict 是空的。
         self.next_hop_dict = {
             i: {j: set() for j in range(self.G.number_of_nodes()) if j != i} for i in range(self.G.number_of_nodes())
         }
-        for src in range(self.G.number_of_nodes()):
-            for dst in range(self.G.number_of_nodes()):
+        for src in range(self.G.number_of_nodes()):   # 开始第一个循环，遍历图中所有的源节点（src）。
+            for dst in range(self.G.number_of_nodes()):   # 开始嵌套循环，遍历所有可能的目的节点（dst）。
                 if src == dst:
                     continue
-                if (src, dst) not in visited_pairs:
+                if (src, dst) not in visited_pairs:   # 检查节点对 (src, dst) 是否已经被访问过。
+                    # 为每对未访问的节点对 (src, dst) 计算所有路径上的下一跳，并将它们添加到 routings 集合中。
                     routings = set(
                         [
                             item
@@ -282,18 +305,22 @@ class ICNP2021Env(gym.Env):
                             for item in sublist
                         ]
                     )
-                    for new_src, next_hop in routings:
-                        self.next_hop_dict[new_src][dst].add(next_hop)
-                        visited_pairs.add((new_src, dst))
-                traffic = self.traffic_demand[src][dst]
+                    for new_src, next_hop in routings:   # 遍历 routings 中的元素，每个元素是一个（源节点，下一跳）对。
+                        self.next_hop_dict[new_src][dst].add(next_hop)   # 更新 next_hop_dict 字典，将下一跳 next_hop 添加到对应的（源节点，目的节点）条目中。
+                        visited_pairs.add((new_src, dst))   # 将（源节点，目的节点）对添加到 visited_pairs 集合中，标记为已访问。
+                traffic = self.traffic_demand[src][dst]   # 获取从源节点 src 到目的节点 dst 的流量需求。
                 self._successive_equal_cost_multipaths(src, dst, traffic)
         self._normalize_traffic()
 
+    ### 收集网络图中每条边上的流量信息并将其存储。
     def _get_link_traffic(self):
         self._distribute_link_traffic()
+        # 这个数组将被用来存储每条边的流量信息
         link_traffic = np.zeros(shape=(self.G.number_of_edges()))
         for i, j in self.G.edges():
+            # 对于每一对节点(i, j)，这行代码从图的边属性中获取"traffic"的值，并赋给link_traffic数组的相应索引位置。索引是由边的属性["id"]给出的。此操作将每条边的流量值存储在数组中，从而使得每个边的唯一标识符id与其流量值相关联。
             link_traffic[self.G[i][j]["id"]] = self.G[i][j]["traffic"]
+        # 这行代码将之前创建并填充了数据的link_traffic数组赋值给类的实例变量self.link_traffic。这样，链接流量的信息就可以在类的其他部分被调用和使用了。
         self.link_traffic = link_traffic
 
     def _metropolis_acceptance(self, current_reward_measure) -> float:
